@@ -128,6 +128,7 @@ void ThreadMapPort(PortVec ports) {
 
 void StartMapPort(const PortVec &ports) {
     if (!g_upnp_thread.joinable()) {
+        g_upnp_interrupt.reset();
         g_upnp_thread = std::thread([=]{
             TraceThread("upnp", ThreadMapPort, std::move(ports));
         });
@@ -151,7 +152,7 @@ std::unique_ptr<AsyncSignalSafe::Sem> psem;
 extern "C" void SigHandler(int sig) {
     AsyncSignalSafe::writeStdErr(AsyncSignalSafe::SBuf("Got signal: ", sig, ", exiting ..."));
     if (auto err = psem->release()) {
-        AsyncSignalSafe::writeStdErr(*err);
+        AsyncSignalSafe::writeStdErr(*err); // tell InterrupterThread below to wake up
     }
 }
 
@@ -159,6 +160,7 @@ void InterrupterThread() {
     if (auto err = psem->acquire()) {
         Error() << *err;
     } else {
+        // got woken up by SigHandler above, or my main() below on app exit
         InterruptMapPort();
         Debug() << "Signaled interrupt";
     }
@@ -189,16 +191,17 @@ int main(int argc, char *argv[])
         }
         ports.push_back(p);
     }
-    auto t = std::thread(TraceThread<void()>, "interrupter", InterrupterThread);
-    Defer d([&t]{
-        std::signal(SIGINT, SIG_DFL);
-        std::signal(SIGTERM, SIG_DFL);
-        psem->release(); // wake up sleeping thread
-        if (t.joinable()) t.join();
-    });
-    std::signal(SIGINT, SigHandler);
-    std::signal(SIGTERM, SigHandler);
     StartMapPort(ports);
+    auto t = std::thread(TraceThread<void()>, "interrupter", InterrupterThread);
+    const auto sigint_orig = std::signal(SIGINT, SigHandler);
+    const auto sigterm_orig = std::signal(SIGTERM, SigHandler);
+    Defer d([&t, &sigint_orig, &sigterm_orig]{
+        std::signal(SIGINT, sigint_orig);
+        std::signal(SIGTERM, sigterm_orig);
+        psem->release(); // wake up sleeping thread to get it to exit
+        if (t.joinable()) t.join();
+        psem.reset();
+    });
     while (g_upnp_interrupt.sleep_for(std::chrono::minutes{60})) {}
     StopMapPort();
     return 0;
