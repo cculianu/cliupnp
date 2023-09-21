@@ -341,7 +341,7 @@ void writeStdErr(const std::string_view &, bool writeNewLine = true) noexcept;
 struct Sem
 {
     Sem() = default; ///< may throw InternalError if it could not allocate necessary resources
-    /// Call this from a monitoring thread -- blocks until realease() is called from e.g. a signal handler
+    /// Call this from a monitoring thread -- blocks until release() is called from e.g. a signal handler
     /// or another thread.  Will return a non-empty optional containing an error message on error.
     std::optional<SBuf<>> acquire() noexcept;
     /// Call this from a signal handler or from a thread that wants to wake up the monitoring thread.
@@ -435,5 +435,7 @@ void ThreadSetInternalName(std::string_view name);
 template <typename Func, typename ...Args>
 void TraceThread(std::string_view threadName, Func f, Args && ...args) {
     ThreadSetInternalName(threadName);
+    Debug() << "Thread start";
     f(std::forward<Args>(args)...);
+    Debug() << "Thread exit";
 }

@@ -146,15 +146,29 @@ void StopMapPort() {
     g_upnp_interrupt.reset();
 }
 
+std::unique_ptr<AsyncSignalSafe::Sem> psem;
+
 extern "C" void SigHandler(int sig) {
     AsyncSignalSafe::writeStdErr(AsyncSignalSafe::SBuf("Got signal: ", sig, ", exiting ..."));
-    InterruptMapPort();
+    if (auto err = psem->release()) {
+        AsyncSignalSafe::writeStdErr(*err);
+    }
+}
+
+void InterrupterThread() {
+    if (auto err = psem->acquire()) {
+        Error() << *err;
+    } else {
+        InterruptMapPort();
+        Debug() << "Signaled interrupt";
+    }
 }
 
 } // namespace
 
 int main(int argc, char *argv[])
 {
+    psem = std::make_unique<AsyncSignalSafe::Sem>();
     Log::fatalCallback = InterruptMapPort;
     if (argc <= 1) {
         (Error() << "Please pass 1 or more port(s) to map via UPnP").useStdOut = false;
@@ -175,6 +189,13 @@ int main(int argc, char *argv[])
         }
         ports.push_back(p);
     }
+    auto t = std::thread(TraceThread<void()>, "interrupter", InterrupterThread);
+    Defer d([&t]{
+        std::signal(SIGINT, SIG_DFL);
+        std::signal(SIGTERM, SIG_DFL);
+        psem->release(); // wake up sleeping thread
+        if (t.joinable()) t.join();
+    });
     std::signal(SIGINT, SigHandler);
     std::signal(SIGTERM, SigHandler);
     StartMapPort(ports);
