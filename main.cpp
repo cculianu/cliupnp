@@ -7,7 +7,6 @@
 #include <miniupnpc/upnperrors.h>
 
 #include <atomic>
-#include <cassert>
 #include <chrono>
 #include <condition_variable>
 #include <csignal>
@@ -129,7 +128,6 @@ void ThreadMapPort(PortVec ports) {
 
 void StartMapPort(const PortVec &ports) {
     if (!g_upnp_thread.joinable()) {
-        assert(!g_upnp_interrupt);
         g_upnp_thread = std::thread([=]{
             TraceThread("upnp", ThreadMapPort, std::move(ports));
         });
