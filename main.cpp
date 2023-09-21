@@ -159,14 +159,20 @@ int main(int argc, char *argv[])
 {
     Log::fatalCallback = InterruptMapPort;
     if (argc <= 1) {
-        Error() << "Please pass 1 or more port(s) to map via UPnP";
+        (Error() << "Please pass 1 or more port(s) to map via UPnP").useStdOut = false;
         return 1;
     }
     PortVec ports;
     for (int i = 1; i < argc; ++i) {
-        const int p = std::stoi(argv[i]);
+        int p = -1;
+        try {
+            p = std::stoi(argv[i]);
+        } catch (const std::invalid_argument &e) {
+            (Debug() << "args[" << i << "] = \"" << argv[i] << "\", got exception: " << e.what()).useStdOut = false;
+            p = -1;
+        }
         if (p <= 0 || p > std::numeric_limits<uint16_t>::max()) {
-            Error() << "Invalid port: " << argv[i];
+            (Error() << "Invalid port: " << argv[i]).useStdOut = false;
             return 1;
         }
         ports.push_back(p);
