@@ -184,7 +184,7 @@ int main(int argc, char *argv[])
         int p = -1;
         try {
             p = std::stoi(argv[i]);
-        } catch (const std::invalid_argument &e) {
+        } catch (const std::logic_error &e) {
             (Debug() << "args[" << i << "] = \"" << argv[i] << "\", got exception: " << e.what()).useStdOut = false;
             p = -1;
         }
