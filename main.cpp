@@ -183,7 +183,7 @@ int main(int argc, char *argv[])
     PortVec ports;
     ports.reserve(std::max(argc - 1, 0));
     for (int i = 1; i < argc; ++i) {
-        int p = -1;
+        int p;
         try {
             p = std::stoi(argv[i]);
         } catch (const std::logic_error &e) {
