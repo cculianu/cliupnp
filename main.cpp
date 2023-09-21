@@ -6,6 +6,7 @@
 #include <miniupnpc/upnpcommands.h>
 #include <miniupnpc/upnperrors.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <chrono>
@@ -180,6 +181,7 @@ int main(int argc, char *argv[])
         return 1;
     }
     PortVec ports;
+    ports.reserve(std::max(argc - 1, 0));
     for (int i = 1; i < argc; ++i) {
         int p = -1;
         try {
