@@ -126,11 +126,11 @@ void ThreadMapPort(PortVec ports) {
     }
 }
 
-void StartMapPort(const PortVec &ports) {
+void StartMapPort(PortVec ports) {
     if (!g_upnp_thread.joinable()) {
         g_upnp_interrupt.reset();
-        g_upnp_thread = std::thread([=]{
-            TraceThread("upnp", ThreadMapPort, std::move(ports));
+        g_upnp_thread = std::thread([pv = std::move(ports)]() mutable {
+            TraceThread("upnp", ThreadMapPort, std::move(pv));
         });
     }
 }
@@ -191,14 +191,14 @@ int main(int argc, char *argv[])
         }
         ports.push_back(p);
     }
-    StartMapPort(ports);
+    StartMapPort(std::move(ports));
     auto t = std::thread(TraceThread<void()>, "interrupter", InterrupterThread);
     const auto sigint_orig = std::signal(SIGINT, SigHandler);
     const auto sigterm_orig = std::signal(SIGTERM, SigHandler);
     Defer d([&t, &sigint_orig, &sigterm_orig]{
         std::signal(SIGINT, sigint_orig);
         std::signal(SIGTERM, sigterm_orig);
-        psem->release(); // wake up sleeping thread to get it to exit
+        psem->release(); // wake up sleeping InterrupterThread to get it to exit
         if (t.joinable()) t.join();
         psem.reset();
     });
