@@ -154,8 +154,9 @@ std::unique_ptr<AsyncSignalSafe::Sem> psem;
 extern "C" void SigHandler(int sig) {
     assert(bool(psem));
     AsyncSignalSafe::writeStdErr(AsyncSignalSafe::SBuf("Got signal: ", sig, ", exiting ..."));
+    // tell InterrupterThread below to wake up
     if (auto err = psem->release()) {
-        AsyncSignalSafe::writeStdErr(*err); // tell InterrupterThread below to wake up
+        AsyncSignalSafe::writeStdErr(*err);
     }
 }
 
