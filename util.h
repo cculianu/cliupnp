@@ -309,7 +309,7 @@ struct SBuf {
         if (neg) tmpBuf[tmpLen++] = '-'; // append negative at end
         const long nBytes = std::max(std::min(long(MaxLen) - long(len), long(tmpLen)), 0L);
         const auto rbegin = std::make_reverse_iterator(tmpBuf + tmpLen),
-            rend   = std::make_reverse_iterator(tmpBuf + (long(tmpLen) - nBytes)); // handle truncation in cases where it doesn't fit
+                   rend   = std::make_reverse_iterator(tmpBuf + (long(tmpLen) - nBytes)); // handle truncation in cases where it doesn't fit
         std::copy(rbegin, rend, strBuf.begin() + len); // append in reverse to strBuf
         len += nBytes;
         strBuf[len] = 0; // terminating nul (there is always room for this char)
@@ -324,7 +324,7 @@ struct SBuf {
 /// Writes directly to file descriptor 2 on platforms that have this concept (Windows, OSX, Unix, etc).
 /// On other platforms is a no-op.  Use this with SBuf() to compose a string to output to stderr
 /// immediately.  If writeNewLine is true, then the platform-specific "\r\n" or "\n" will be also written
-/// in a second write all.
+/// in a second write call.
 void writeStdErr(const std::string_view &, bool writeNewLine = true) noexcept;
 
 /// A very rudimentary primitive for signaling a condition from a signal handler,

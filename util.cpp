@@ -39,7 +39,7 @@ Log::Log(Color c)
 
 /* static */ std::function<void()> Log::fatalCallback;
 
-static const auto g_main_thread_id  = std::this_thread::get_id();
+static const auto g_main_thread_id = std::this_thread::get_id();
 
 static bool isMainThread(std::thread::id *id_out = nullptr) {
     const auto tid = std::this_thread::get_id();
@@ -68,7 +68,7 @@ Log::~Log()
             os << std::flush;
         }
         // Fatal flags the app to quit
-        if (fatalCallback && level == static_cast<int>(Level::Fatal)) {
+        if (level == static_cast<int>(Level::Fatal) && fatalCallback) {
             fatalCallback();
         }
     }
