@@ -7,6 +7,7 @@
 #include <miniupnpc/upnperrors.h>
 
 #include <atomic>
+#include <cassert>
 #include <chrono>
 #include <condition_variable>
 #include <csignal>
@@ -150,6 +151,7 @@ void StopMapPort() {
 std::unique_ptr<AsyncSignalSafe::Sem> psem;
 
 extern "C" void SigHandler(int sig) {
+    assert(bool(psem));
     AsyncSignalSafe::writeStdErr(AsyncSignalSafe::SBuf("Got signal: ", sig, ", exiting ..."));
     if (auto err = psem->release()) {
         AsyncSignalSafe::writeStdErr(*err); // tell InterrupterThread below to wake up
@@ -157,6 +159,7 @@ extern "C" void SigHandler(int sig) {
 }
 
 void InterrupterThread() {
+    assert(bool(psem));
     if (auto err = psem->acquire()) {
         Error() << *err;
     } else {
