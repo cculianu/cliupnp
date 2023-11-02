@@ -6,6 +6,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <optional>
@@ -107,16 +108,10 @@ class Debug : public Log
 {
 public:
     using Log::Log; // inherit c'tor
-    virtual ~Debug();
+    virtual ~Debug() override;
 
     static bool isEnabled();
     static bool forceEnable; ///< defaults false -- set to true if there is no App and you want to ensure Debug() works
-
-#if defined(__GNUC__) && !defined(__clang__)
-    // Grr.. GCC doesn't fully implement C++ 17 so we must do this. :(
-    template <typename ...Args>
-    explicit Debug(Args && ...args) : Log(std::forward<Args>(args)...) {}
-#endif
 };
 
 /// This is fast: It only evaluates args if Debug is enabled. Use this in performance-critical code.
@@ -128,26 +123,20 @@ do {                               \
         Debug()(__VA_ARGS__);      \
 } while (0)
 
-    /** \brief Stream-like class to print a trace message to the app's logging facility
-        Example:
-       \code
-            Trace() << "This is a trace debug message"; // would print a trace message to the logging facility
-       \endcode
-     */
-    class Trace : public Log
+/** \brief Stream-like class to print a trace message to the app's logging facility
+    Example:
+   \code
+        Trace() << "This is a trace debug message"; // would print a trace message to the logging facility
+   \endcode
+ */
+class Trace : public Log
 {
 public:
     using Log::Log; // inherit c'tor
-    virtual ~Trace();
+    virtual ~Trace() override;
 
     static bool isEnabled();
     static bool forceEnable; ///< defaults false -- set to true if there is no App and you want Trace() to work.
-
-#if defined(__GNUC__) && !defined(__clang__)
-    // Grr.. GCC doesn't fully implement C++ 17 so we must do this. :(
-    template <typename ...Args>
-    explicit Trace(Args && ...args) : Log(std::forward<Args>(args)...) {}
-#endif
 };
 
 /// This is fast: It only evaluates args if Trace is enabled. Use this in performance-critical code.
@@ -159,23 +148,17 @@ do {                               \
         Trace()(__VA_ARGS__);      \
 } while (0)
 
-    /** \brief Stream-like class to print an error message to the app's logging facility
-        Example:
-       \code
-            Error() << "This is an ERROR message!!"; // would print an error message to the logging facility
-       \endcode
-     */
-    class Error : public Log
+/** \brief Stream-like class to print an error message to the app's logging facility
+    Example:
+   \code
+        Error() << "This is an ERROR message!!"; // would print an error message to the logging facility
+   \endcode
+ */
+class Error : public Log
 {
 public:
     using Log::Log; // inherit c'tor
-    virtual ~Error();
-
-#if defined(__GNUC__) && !defined(__clang__)
-    // Grr.. GCC doesn't fully implement C++ 17 so we must do this. :(
-    template <typename ...Args>
-    explicit Error(Args && ...args) : Log(std::forward<Args>(args)...) {}
-#endif
+    virtual ~Error() override;
 };
 
 /** \brief Stream-like class to print a warning message to the app's logging facility
@@ -189,13 +172,7 @@ class Warning : public Log
 {
 public:
     using Log::Log; // inherit c'tor
-    virtual ~Warning();
-
-#if defined(__GNUC__) && !defined(__clang__)
-    // Grr.. GCC doesn't fully implement C++ 17 so we must do this. :(
-    template <typename ...Args>
-    explicit Warning(Args && ...args) : Log(std::forward<Args>(args)...) {}
-#endif
+    virtual ~Warning() override;
 };
 
 /// Like Error(), except it will enqueue a qApp->exit(1) after logging the message
@@ -203,13 +180,7 @@ class Fatal : public Log
 {
 public:
     using Log::Log;
-    virtual ~Fatal();
-
-#if defined(__GNUC__) && !defined(__clang__)
-    // Grr.. GCC doesn't fully implement C++ 17 so we must do this. :(
-    template <typename ...Args>
-    explicit Fatal(Args && ...args) : Log(std::forward<Args>(args)...) {}
-#endif
+    virtual ~Fatal() override;
 };
 
 // Now add these macros for symmetry
@@ -429,12 +400,12 @@ struct RAII : public Defer<> {
 
 
 // Thread internal name management (for Log printing, etc)
-const std::string & ThreadGetInternalName();
-void ThreadSetInternalName(std::string_view name);
+const std::string & ThreadGetName();
+void ThreadRename(std::string_view name);
 
 template <typename Func, typename ...Args>
 void TraceThread(std::string_view threadName, Func f, Args && ...args) {
-    ThreadSetInternalName(threadName);
+    ThreadRename(threadName);
     Debug() << "Thread start";
     f(std::forward<Args>(args)...);
     Debug() << "Thread exit";

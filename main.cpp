@@ -37,7 +37,8 @@ void ThreadMapPort(PortVec ports) {
     const char *minissdpdpath = nullptr;
     struct UPNPDev *devlist = nullptr;
     Defer d2([&devlist]{
-        if (devlist) freeUPNPDevlist(devlist);
+        if (!devlist) return;
+        freeUPNPDevlist(devlist);
         devlist = nullptr;
     });
     char lanaddr[64];
@@ -61,78 +62,68 @@ void ThreadMapPort(PortVec ports) {
         Debug("Found UPNP Dev %d: %s", i++, d->descURL);
     }
 
-    struct UPNPUrls urls;
-    struct IGDdatas data;
+    UPNPUrls urls = {};
+    IGDdatas data = {};
     int r;
 
     r = UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr));
-    if (r == 1) {
-        if (true) {
-            char externalIPAddress[40];
-            r = UPNP_GetExternalIPAddress(urls.controlURL, data.first.servicetype, externalIPAddress);
-            if (r != UPNPCOMMAND_SUCCESS) {
-                LogPrintf("UPnP: GetExternalIPAddress() returned %d\n", r);
-            } else {
-                if (externalIPAddress[0]) {
-                    LogPrintf("UPnP: ExternalIPAddress = %s\n", externalIPAddress);
-                } else {
-                    LogPrintf("UPnP: GetExternalIPAddress failed.\n");
-                }
-            }
+    Defer freeUrls([r, &urls]{ if (r != 0) FreeUPNPUrls(&urls); });
+
+    if (r != 1) {
+        Error("No valid UPnP IGDs found (r=%d)", r);
+        return;
+    }
+
+    char externalIPAddress[80] = {0};
+    r = UPNP_GetExternalIPAddress(urls.controlURL, data.first.servicetype, externalIPAddress);
+    if (r != UPNPCOMMAND_SUCCESS) {
+        LogPrintf("UPnP: GetExternalIPAddress() returned %d\n", r);
+    } else {
+        if (externalIPAddress[0]) {
+            LogPrintf("UPnP: ExternalIPAddress = %s\n", externalIPAddress);
+        } else {
+            LogPrintf("UPnP: GetExternalIPAddress failed.\n");
         }
+    }
 
-        const std::string strDesc = "cliupnp";
+    const std::string strDesc = "cliupnp";
+    std::set<uint16_t> mappedPorts;
 
-        std::set<uint16_t> mappedPorts;
-
-        do {
-            if (g_upnp_interrupt)
-                break;
-            for (const auto prt : ports) {
-                const std::string port = strprintf("%u", prt);
-                Debug() << "Mapping " << port << " ...";
-#ifndef UPNPDISCOVER_SUCCESS
-                /* miniupnpc 1.5 */
-                r = UPNP_AddPortMapping(urls.controlURL, data.first.servicetype,
-                                        port.c_str(), port.c_str(), lanaddr,
-                                        strDesc.c_str(), "TCP", 0);
-#else
-                /* miniupnpc 1.6 */
-                r = UPNP_AddPortMapping(urls.controlURL, data.first.servicetype,
-                                        port.c_str(), port.c_str(), lanaddr,
-                                        strDesc.c_str(), "TCP", 0, "0");
-#endif
-
-                if (r != UPNPCOMMAND_SUCCESS) {
-                    LogPrintf("AddPortMapping(%s, %s, %s) failed with code %d (%s)\n",
-                              port, port, lanaddr, r, strupnperror(r));
-                    mappedPorts.erase(prt);
-                } else {
-                    LogPrintf("UPnP Port Mapping of port %s successful.\n", port);
-                    mappedPorts.insert(prt);
-                }
-            }
-        } while (g_upnp_interrupt.sleep_for(std::chrono::minutes(20)));
-
+    Defer cleanup([&mappedPorts, &urls, &data]{
         for (const auto prt : mappedPorts) {
             const std::string port = strprintf("%u", prt);
             Debug() << "Unmapping " << port << " ...";
-            r = UPNP_DeletePortMapping(urls.controlURL, data.first.servicetype, port.c_str(), "TCP", 0);
-            LogPrintf("UPNP_DeletePortMapping() for %s returned: %d\n", port, r);
+            const int res = UPNP_DeletePortMapping(urls.controlURL, data.first.servicetype, port.c_str(), "TCP", 0);
+            LogPrintf("UPNP_DeletePortMapping() for %s: %s\n", port, res == 0 ? "success"
+                                                                              : strprintf("returned %d", res));
         }
-        FreeUPNPUrls(&urls);
-    } else {
-        Error("No valid UPnP IGDs found (r=%d)", r);
-        if (r != 0) FreeUPNPUrls(&urls);
-    }
-}
+    });
 
-void StartMapPort(PortVec ports) {
-    if (!g_upnp_thread.joinable()) {
-        g_upnp_interrupt.reset();
-        g_upnp_thread = std::thread([pv = std::move(ports)]() mutable {
-            TraceThread("upnp", ThreadMapPort, std::move(pv));
-        });
+    for (bool ok = true; ok && !g_upnp_interrupt; ok = g_upnp_interrupt.sleep_for(std::chrono::minutes(20))) {
+        for (const auto prt : ports) {
+            const std::string port = strprintf("%u", prt);
+            Debug() << "Mapping " << port << " ...";
+#ifndef UPNPDISCOVER_SUCCESS
+            /* miniupnpc 1.5 */
+            r = UPNP_AddPortMapping(urls.controlURL, data.first.servicetype,
+                                    port.c_str(), port.c_str(), lanaddr,
+                                    strDesc.c_str(), "TCP", 0);
+#else
+            /* miniupnpc 1.6 */
+            r = UPNP_AddPortMapping(urls.controlURL, data.first.servicetype,
+                                    port.c_str(), port.c_str(), lanaddr,
+                                    strDesc.c_str(), "TCP", 0, "0");
+#endif
+
+            if (r != UPNPCOMMAND_SUCCESS) {
+                LogPrintf("AddPortMapping(%s, %s, %s) failed with code %d (%s)\n",
+                          port, port, lanaddr, r, strupnperror(r));
+                mappedPorts.erase(prt);
+            } else {
+                LogPrintf("UPnP Port Mapping of port %s successful.\n", port);
+                mappedPorts.insert(prt);
+            }
+        }
     }
 }
 
@@ -148,11 +139,18 @@ void StopMapPort() {
     g_upnp_interrupt.reset();
 }
 
+void StartMapPort(PortVec ports) {
+    StopMapPort();
+    g_upnp_thread = std::thread([pv = std::move(ports)]() mutable {
+        TraceThread("upnp", ThreadMapPort, std::move(pv));
+    });
+}
+
 std::unique_ptr<AsyncSignalSafe::Sem> psem;
 
 extern "C" void SigHandler(int sig) {
     assert(bool(psem));
-    AsyncSignalSafe::writeStdErr(AsyncSignalSafe::SBuf("Got signal: ", sig, ", exiting ..."));
+    AsyncSignalSafe::writeStdErr(AsyncSignalSafe::SBuf(" --- Got signal: ", sig, ", exiting ---"));
     // tell InterrupterThread below to wake up
     if (auto err = psem->release()) {
         AsyncSignalSafe::writeStdErr(*err);

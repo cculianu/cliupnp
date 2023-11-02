@@ -54,7 +54,7 @@ Log::~Log()
     if (doprt) {
         std::string thrdStr;
         if (!isMainThread()) {
-            thrdStr = "<" + ThreadGetInternalName() + "> ";
+            thrdStr = "<" + ThreadGetName() + "> ";
         }
         const std::string theString = thrdStr + (isaTTY(useStdOut) ? colorize(s.str(), color) : s.str());
 
@@ -239,7 +239,7 @@ std::optional<SBuf<>> Sem::release() noexcept {
 
 static thread_local std::string g_thread_name;
 
-const std::string & ThreadGetInternalName() {
+const std::string & ThreadGetName() {
     if (!g_thread_name.empty()) {
         return g_thread_name;
     } // else ...
@@ -256,4 +256,23 @@ const std::string & ThreadGetInternalName() {
     return fallback_name;
 }
 
-void ThreadSetInternalName(std::string_view name) { g_thread_name = name; }
+#if (defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__DragonFly__))
+#include <pthread.h>
+#include <pthread_np.h>
+#endif
+
+#if  __has_include(<sys/prctl.h>)
+#include <sys/prctl.h> // For prctl, PR_SET_NAME, PR_GET_NAME
+#endif
+
+void ThreadRename(std::string_view name) {
+    g_thread_name = name;
+#if defined(PR_SET_NAME)
+    // Only the first 15 characters are used (16 - NUL terminator)
+    ::prctl(PR_SET_NAME, g_thread_name.c_str(), 0, 0, 0);
+#elif (defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__DragonFly__))
+    pthread_set_name_np(pthread_self(), g_thread_name.c_str());
+#elif defined(__MACH__) && defined(__APPLE__)
+    pthread_setname_np(g_thread_name.c_str());
+#endif
+}
