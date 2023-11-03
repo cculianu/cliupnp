@@ -202,9 +202,9 @@ int main(int argc, char *argv[])
     // wait for signal handler
     WaitSem();
     no_more_signals = true;
-    std::signal(SIGINT, sigint_orig);
-    std::signal(SIGTERM, sigterm_orig);
     psem.reset();
     StopMapPort();
+    std::signal(SIGINT, sigint_orig);
+    std::signal(SIGTERM, sigterm_orig);
     return 0;
 }
