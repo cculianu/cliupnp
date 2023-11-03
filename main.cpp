@@ -99,7 +99,8 @@ void ThreadMapPort(PortVec ports) {
         }
     });
 
-    for (bool ok = true; ok && !g_upnp_interrupt; ok = g_upnp_interrupt.sleep_for(std::chrono::minutes(20))) {
+    do {
+        if (g_upnp_interrupt) break;
         for (const auto prt : ports) {
             const std::string port = strprintf("%u", prt);
             Debug() << "Mapping " << port << " ...";
@@ -124,7 +125,7 @@ void ThreadMapPort(PortVec ports) {
                 mappedPorts.insert(prt);
             }
         }
-    }
+    } while (!g_upnp_interrupt.wait(std::chrono::minutes{20}));
 }
 
 void InterruptMapPort() {
@@ -205,7 +206,7 @@ int main(int argc, char *argv[])
         if (t.joinable()) t.join();
         psem.reset();
     });
-    while (g_upnp_interrupt.sleep_for(std::chrono::minutes{60})) {}
+    g_upnp_interrupt.wait();
     StopMapPort();
     return 0;
 }
