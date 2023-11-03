@@ -401,11 +401,11 @@ struct RAII : public Defer<> {
 
 // Thread internal name management (for Log printing, etc)
 const std::string & ThreadGetName();
-void ThreadRename(std::string_view name);
+void ThreadSetName(std::string_view name);
 
 template <typename Func, typename ...Args>
 void TraceThread(std::string_view threadName, Func f, Args && ...args) {
-    ThreadRename(threadName);
+    ThreadSetName(threadName);
     Debug() << "Thread start";
     f(std::forward<Args>(args)...);
     Debug() << "Thread exit";

@@ -128,13 +128,9 @@ void ThreadMapPort(PortVec ports) {
     } while (!g_upnp_interrupt.wait(std::chrono::minutes{20}));
 }
 
-void InterruptMapPort() {
-    g_upnp_interrupt();
-}
-
 void StopMapPort() {
     if (g_upnp_thread.joinable()) {
-        InterruptMapPort();
+        g_upnp_interrupt();
         g_upnp_thread.join();
     }
     g_upnp_interrupt.reset();
@@ -148,24 +144,29 @@ void StartMapPort(PortVec ports) {
 }
 
 std::unique_ptr<AsyncSignalSafe::Sem> psem;
+std::atomic_bool no_more_signals = false;
 
-extern "C" void SigHandler(int sig) {
+void SignalSem() {
     assert(bool(psem));
-    AsyncSignalSafe::writeStdErr(AsyncSignalSafe::SBuf(" --- Got signal: ", sig, ", exiting ---"));
     // tell InterrupterThread below to wake up
     if (auto err = psem->release()) {
         AsyncSignalSafe::writeStdErr(*err);
     }
 }
 
-void InterrupterThread() {
+void WaitSem() {
     assert(bool(psem));
     if (auto err = psem->acquire()) {
         Error() << *err;
     } else {
-        // got woken up by SigHandler above, or my main() below on app exit
-        InterruptMapPort();
-        Debug() << "Signaled interrupt";
+        Debug() << "Read interrupt signal from semaphore";
+    }
+}
+
+extern "C" void SigHandler(int sig) {
+    if (bool val = false; no_more_signals.compare_exchange_strong(val, true)) {
+        AsyncSignalSafe::writeStdErr(AsyncSignalSafe::SBuf(" --- Got signal: ", sig, ", exiting ---"));
+        SignalSem();
     }
 }
 
@@ -174,7 +175,7 @@ void InterrupterThread() {
 int main(int argc, char *argv[])
 {
     psem = std::make_unique<AsyncSignalSafe::Sem>();
-    Log::fatalCallback = InterruptMapPort;
+    Log::fatalCallback = SignalSem;
     if (argc <= 1) {
         (Error() << "Please pass 1 or more port(s) to map via UPnP").useStdOut = false;
         return 1;
@@ -196,17 +197,14 @@ int main(int argc, char *argv[])
         ports.push_back(p);
     }
     StartMapPort(std::move(ports));
-    auto t = std::thread(TraceThread<void()>, "interrupter", InterrupterThread);
     const auto sigint_orig = std::signal(SIGINT, SigHandler);
     const auto sigterm_orig = std::signal(SIGTERM, SigHandler);
-    Defer d([&t, &sigint_orig, &sigterm_orig]{
-        std::signal(SIGINT, sigint_orig);
-        std::signal(SIGTERM, sigterm_orig);
-        psem->release(); // wake up sleeping InterrupterThread to get it to exit
-        if (t.joinable()) t.join();
-        psem.reset();
-    });
-    g_upnp_interrupt.wait();
+    // wait for signal handler
+    WaitSem();
+    no_more_signals = true;
+    std::signal(SIGINT, sigint_orig);
+    std::signal(SIGTERM, sigterm_orig);
+    psem.reset();
     StopMapPort();
     return 0;
 }

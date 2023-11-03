@@ -265,7 +265,7 @@ const std::string & ThreadGetName() {
 #include <sys/prctl.h> // For prctl, PR_SET_NAME, PR_GET_NAME
 #endif
 
-void ThreadRename(std::string_view name) {
+void ThreadSetName(std::string_view name) {
     g_thread_name = name;
 #if defined(PR_SET_NAME)
     // Only the first 15 characters are used (16 - NUL terminator)

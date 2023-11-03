@@ -13,7 +13,7 @@ void ThreadInterrupt::operator()() {
 }
 
 bool ThreadInterrupt::wait(std::optional<std::chrono::milliseconds> rel_time) const {
-    auto predicate = [this] { return flag.load(std::memory_order_acquire); };
+    const auto predicate = [this] { return flag.load(std::memory_order_acquire); };
     std::unique_lock lock(mut);
     if (predicate()) {
         return true;
