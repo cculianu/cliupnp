@@ -5,6 +5,7 @@
 #include <miniupnpc/upnpcommands.h>
 #include <miniupnpc/upnperrors.h>
 
+#include <algorithm>
 #include <set>
 #include <utility>
 
@@ -15,7 +16,16 @@ UpnpMgr::~UpnpMgr() { stop(); }
 void UpnpMgr::start(PortVec pv)
 {
     stop();
+
+    // ensure pv is sorted and contains unique elements before assigning to `ports`
+    std::sort(pv.begin(), pv.end());
+    auto it = std::unique(pv.begin(), pv.end());
+    if (it != pv.end()) {
+        pv.erase(it, pv.end());
+        pv.shrink_to_fit();
+    }
     ports = std::move(pv);
+
     thread = std::thread([this]{
         TraceThread(name, [this]{
             run();
