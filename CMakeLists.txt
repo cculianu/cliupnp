@@ -11,7 +11,7 @@ elseif(UNIX)
     add_compile_definitions(UNIX=1)
 endif()
 
-add_executable(cliupnp main.cpp util.cpp threadinterrupt.cpp)
+add_executable(cliupnp main.cpp util.cpp threadinterrupt.cpp upnpmgr.cpp)
 
 # Add path for custom modules
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)

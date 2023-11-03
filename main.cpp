@@ -1,152 +1,19 @@
-#include "threadinterrupt.h"
+#include "upnpmgr.h"
 #include "util.h"
-
-#include <miniupnpc/miniupnpc.h>
-#include <miniupnpc/upnpcommands.h>
-#include <miniupnpc/upnperrors.h>
 
 #include <algorithm>
 #include <atomic>
 #include <cassert>
-#include <chrono>
-#include <condition_variable>
 #include <csignal>
-#include <functional>
 #include <limits>
-#include <mutex>
-#include <set>
-#include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
-using PortVec = std::vector<uint16_t>;
-
-ThreadInterrupt g_upnp_interrupt;
-std::thread g_upnp_thread;
-
-void ThreadMapPort(PortVec ports) {
-    Defer d([]{
-        g_upnp_interrupt();
-    });
-    if (ports.empty()) {
-        Error() << "Pass a vector of ports!";
-        return;
-    }
-    Log() << "UPNP thread started, will manage " << ports.size() << " port mapping(s), probing for IGDs ...";
-    const char *multicastif = nullptr;
-    const char *minissdpdpath = nullptr;
-    struct UPNPDev *devlist = nullptr;
-    Defer d2([&devlist]{
-        if (!devlist) return;
-        freeUPNPDevlist(devlist);
-        devlist = nullptr;
-    });
-    char lanaddr[64];
-    constexpr const int delay_msec = 2000;
-
-#ifndef UPNPDISCOVER_SUCCESS
-    /* miniupnpc 1.5 */
-    devlist = upnpDiscover(delay_msec, multicastif, minissdpdpath, 0);
-#elif MINIUPNPC_API_VERSION < 14
-    /* miniupnpc 1.6 */
-    int error = 0;
-    devlist = upnpDiscover(delay_msec, multicastif, minissdpdpath, 0, 0, &error);
-#else
-    /* miniupnpc 1.9.20150730 */
-    int error = 0;
-    devlist = upnpDiscover(delay_msec, multicastif, minissdpdpath, 0, 0, 2, &error);
-#endif
-
-    int i = 0;
-    for (UPNPDev *d = devlist; d; d = d->pNext) {
-        Debug("Found UPNP Dev %d: %s", i++, d->descURL);
-    }
-
-    UPNPUrls urls = {};
-    IGDdatas data = {};
-    int r;
-
-    r = UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr));
-    Defer freeUrls([r, &urls]{ if (r != 0) FreeUPNPUrls(&urls); });
-
-    if (r != 1) {
-        Error("No valid UPnP IGDs found (r=%d)", r);
-        return;
-    }
-
-    char externalIPAddress[80] = {0};
-    r = UPNP_GetExternalIPAddress(urls.controlURL, data.first.servicetype, externalIPAddress);
-    if (r != UPNPCOMMAND_SUCCESS) {
-        LogPrintf("UPnP: GetExternalIPAddress() returned %d\n", r);
-    } else {
-        if (externalIPAddress[0]) {
-            LogPrintf("UPnP: ExternalIPAddress = %s\n", externalIPAddress);
-        } else {
-            LogPrintf("UPnP: GetExternalIPAddress failed.\n");
-        }
-    }
-
-    const std::string strDesc = "cliupnp";
-    std::set<uint16_t> mappedPorts;
-
-    Defer cleanup([&mappedPorts, &urls, &data]{
-        for (const auto prt : mappedPorts) {
-            const std::string port = strprintf("%u", prt);
-            Debug() << "Unmapping " << port << " ...";
-            const int res = UPNP_DeletePortMapping(urls.controlURL, data.first.servicetype, port.c_str(), "TCP", 0);
-            LogPrintf("UPNP_DeletePortMapping() for %s: %s\n", port, res == 0 ? "success"
-                                                                              : strprintf("returned %d", res));
-        }
-    });
-
-    do {
-        if (g_upnp_interrupt) break;
-        for (const auto prt : ports) {
-            const std::string port = strprintf("%u", prt);
-            Debug() << "Mapping " << port << " ...";
-#ifndef UPNPDISCOVER_SUCCESS
-            /* miniupnpc 1.5 */
-            r = UPNP_AddPortMapping(urls.controlURL, data.first.servicetype,
-                                    port.c_str(), port.c_str(), lanaddr,
-                                    strDesc.c_str(), "TCP", 0);
-#else
-            /* miniupnpc 1.6 */
-            r = UPNP_AddPortMapping(urls.controlURL, data.first.servicetype,
-                                    port.c_str(), port.c_str(), lanaddr,
-                                    strDesc.c_str(), "TCP", 0, "0");
-#endif
-
-            if (r != UPNPCOMMAND_SUCCESS) {
-                LogPrintf("AddPortMapping(%s, %s, %s) failed with code %d (%s)\n",
-                          port, port, lanaddr, r, strupnperror(r));
-                mappedPorts.erase(prt);
-            } else {
-                LogPrintf("UPnP Port Mapping of port %s successful.\n", port);
-                mappedPorts.insert(prt);
-            }
-        }
-    } while (!g_upnp_interrupt.wait(std::chrono::minutes{20}));
-}
-
-void StopMapPort() {
-    if (g_upnp_thread.joinable()) {
-        g_upnp_interrupt();
-        g_upnp_thread.join();
-    }
-    g_upnp_interrupt.reset();
-}
-
-void StartMapPort(PortVec ports) {
-    StopMapPort();
-    g_upnp_thread = std::thread([pv = std::move(ports)]() mutable {
-        TraceThread("upnp", ThreadMapPort, std::move(pv));
-    });
-}
-
 std::unique_ptr<AsyncSignalSafe::Sem> psem;
 std::atomic_bool no_more_signals = false;
 
-void SignalSem() {
+void signalSem() {
     assert(bool(psem));
     // tell InterrupterThread below to wake up
     if (auto err = psem->release()) {
@@ -154,7 +21,7 @@ void SignalSem() {
     }
 }
 
-void WaitSem() {
+void waitSem() {
     assert(bool(psem));
     if (auto err = psem->acquire()) {
         Error() << *err;
@@ -163,24 +30,30 @@ void WaitSem() {
     }
 }
 
-extern "C" void SigHandler(int sig) {
+extern "C" void sigHandler(int sig) {
     if (bool val = false; no_more_signals.compare_exchange_strong(val, true)) {
         AsyncSignalSafe::writeStdErr(AsyncSignalSafe::SBuf(" --- Got signal: ", sig, ", exiting ---"));
-        SignalSem();
+        signalSem();
     }
 }
-
 } // namespace
 
 int main(int argc, char *argv[])
 {
-    psem = std::make_unique<AsyncSignalSafe::Sem>();
-    Log::fatalCallback = SignalSem;
     if (argc <= 1) {
         (Error() << "Please pass 1 or more port(s) to map via UPnP").useStdOut = false;
         return 1;
     }
-    PortVec ports;
+
+    psem = std::make_unique<AsyncSignalSafe::Sem>();
+    Log::fatalCallback = signalSem;
+    Defer d([]{
+        Log::fatalCallback = {};
+        psem.reset();
+    });
+
+    // Parse ports
+    UpnpMgr::PortVec ports;
     ports.reserve(std::max(argc - 1, 0));
     for (int i = 1; i < argc; ++i) {
         int p;
@@ -196,15 +69,31 @@ int main(int argc, char *argv[])
         }
         ports.push_back(p);
     }
-    StartMapPort(std::move(ports));
-    const auto sigint_orig = std::signal(SIGINT, SigHandler);
-    const auto sigterm_orig = std::signal(SIGTERM, SigHandler);
-    // wait for signal handler
-    WaitSem();
-    no_more_signals = true;
-    psem.reset();
-    StopMapPort();
-    std::signal(SIGINT, sigint_orig);
-    std::signal(SIGTERM, sigterm_orig);
+
+    UpnpMgr upnp("cliupnp");
+
+    // Install signal handlers and the defered cleanup
+    std::vector<std::pair<int, decltype(std::signal(0, nullptr))>> sigs_saved;
+    sigs_saved.emplace_back(SIGINT, std::signal(SIGINT, sigHandler));
+    sigs_saved.emplace_back(SIGTERM, std::signal(SIGTERM, sigHandler));
+#ifdef SIGHUP
+    sigs_saved.emplace_back(SIGHUP, std::signal(SIGHUP, sigHandler));
+#endif
+#ifdef SIGQUIT
+    sigs_saved.emplace_back(SIGQUIT, std::signal(SIGQUIT, sigHandler));
+#endif
+    Defer d2([&upnp, &sigs_saved]{
+        no_more_signals = true;
+        upnp.stop();
+        for (const auto & [sig, orig_val]: sigs_saved)
+            std::signal(sig, orig_val);
+    });
+
+    // Start the upnp thread
+    upnp.start(std::move(ports));
+
+    // Wait for signal handler, returning will call the cleanup Defer functions above in reverse order
+    waitSem();
+
     return 0;
 }
