@@ -14,7 +14,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <utility>
 
 #if defined(__clang__) || defined(__GNUC__)
