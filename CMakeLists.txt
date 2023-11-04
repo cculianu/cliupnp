@@ -1,9 +1,18 @@
 cmake_minimum_required(VERSION 3.5)
 
-project(cliupnp LANGUAGES CXX)
+project(cliupnp
+        VERSION 1.0.0
+        DESCRIPTION "A command-line tool for opening up UPnP ports."
+        HOMEPAGE_URL "https://www.gitlab.com/cculianu/cliupnp"
+        LANGUAGES CXX
+)
 
+# Package information
+set(PACKAGE_NAME ${PROJECT_NAME})
+set(PACKAGE_VERSION ${PROJECT_VERSION})
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+add_compile_definitions(PACKAGE_NAME="${PACKAGE_NAME}" PACKAGE_VERSION="${PACKAGE_VERSION}")
 
 if(WIN32)
     add_compile_definitions(WINDOWS=1)
@@ -11,7 +20,7 @@ elseif(UNIX)
     add_compile_definitions(UNIX=1)
 endif()
 
-add_executable(cliupnp main.cpp util.cpp threadinterrupt.cpp upnpmgr.cpp)
+add_executable(cliupnp src/main.cpp src/threadinterrupt.cpp src/upnpmgr.cpp src/util.cpp)
 
 # Add path for custom modules
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)

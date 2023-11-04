@@ -1,3 +1,4 @@
+#include "argparse.hpp"
 #include "upnpmgr.h"
 #include "util.h"
 
@@ -40,8 +41,28 @@ extern "C" void sigHandler(int sig) {
 
 int main(int argc, char *argv[])
 {
-    if (argc <= 1) {
-        (Error() << "Please pass 1 or more port(s) to map via UPnP").useStdOut = false;
+    const char *name = PACKAGE_NAME, *version = PACKAGE_VERSION;
+    argparse::ArgumentParser parser(name, version);
+    parser.add_argument("port")
+        .help("One or more ports to open up on the router")
+        .nargs(argparse::nargs_pattern::at_least_one)
+        .scan<'u', uint16_t>();
+    parser.add_argument("-d", "--debug")
+        .default_value(false)
+        .implicit_value(true)
+        .help("Enable extra debug logging");
+
+
+    UpnpMgr::PortVec ports;
+    try {
+        parser.parse_args(argc, argv);
+        // Grab port positional arg(s)
+        ports = parser.get<UpnpMgr::PortVec>("port");
+        // Interpret -d option
+        Log::logLevel = int(parser.get<bool>("-d") ? Log::Level::Debug : Log::Level::Info);
+    } catch (const std::exception &e) {
+        // Rewrite some of the obscure errors that the ArgParser sends
+        (Error() << e.what()).useStdOut = false;
         return 1;
     }
 
@@ -53,24 +74,7 @@ int main(int argc, char *argv[])
     });
 
     // Parse ports
-    UpnpMgr::PortVec ports;
-    ports.reserve(std::max(argc - 1, 0));
-    for (int i = 1; i < argc; ++i) {
-        int p;
-        try {
-            p = std::stoi(argv[i]);
-        } catch (const std::logic_error &e) {
-            (Debug() << "args[" << i << "] = \"" << argv[i] << "\", got exception: " << e.what()).useStdOut = false;
-            p = -1;
-        }
-        if (p <= 0 || p > std::numeric_limits<uint16_t>::max()) {
-            (Error() << "Invalid port: " << argv[i]).useStdOut = false;
-            return 1;
-        }
-        ports.push_back(p);
-    }
-
-    UpnpMgr upnp("cliupnp");
+    UpnpMgr upnp(name);
 
     // Install signal handlers and the defered cleanup
     std::vector<std::pair<int, decltype(std::signal(0, nullptr))>> sigs_saved;
