@@ -10,7 +10,9 @@
 
 #if WINDOWS
 #  define WIN32_LEAN_AND_MEAN 1
+#  include <winsock2.h>
 #  include <windows.h>
+#  include <ws2tcpip.h>
 #  include <psapi.h>
 #  include <io.h>              // for _write(), _read(), _pipe(), _close()
 #  include <fcntl.h>           // for O_BINARY, O_TEXT
