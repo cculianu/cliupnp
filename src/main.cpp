@@ -66,6 +66,11 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    if ( ! SetupNetworking()) {
+        (Error() << "Failed to start networking").useStdOut = false;
+        return 1;
+    }
+
     psem = std::make_unique<AsyncSignalSafe::Sem>();
     Log::fatalCallback = signalSem;
     Defer d([]{

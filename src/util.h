@@ -32,6 +32,9 @@
 #define LIKELY(bool_expr)   EXPECT(int(bool(bool_expr)), 1)
 #define UNLIKELY(bool_expr) EXPECT(int(bool(bool_expr)), 0)
 
+/// No-op on every platform except Windows. On Windows it does the WSAStartup() ritual.
+bool SetupNetworking();
+
 /// A std::runtime_error subclass used to denote "InternalError"
 struct InternalError : std::runtime_error {
     using std::runtime_error::runtime_error;
