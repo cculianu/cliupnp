@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cassert>
 #include <csignal>
+#include <cstdlib>
 #include <limits>
 #include <utility>
 #include <vector>
@@ -27,7 +28,7 @@ void waitSem() {
     if (auto err = psem->acquire()) {
         Error() << *err;
     } else {
-        Debug() << "Read interrupt signal from semaphore";
+        Debug() << "Sem wake-up";
     }
 }
 
@@ -63,12 +64,12 @@ int main(int argc, char *argv[])
     } catch (const std::exception &e) {
         // Rewrite some of the obscure errors that the ArgParser sends
         (Error() << e.what()).useStdOut = false;
-        return 1;
+        return EXIT_FAILURE;
     }
 
     if ( ! SetupNetworking()) {
         (Error() << "Failed to start networking").useStdOut = false;
-        return 1;
+        return EXIT_FAILURE;
     }
 
     psem = std::make_unique<AsyncSignalSafe::Sem>();
@@ -91,6 +92,9 @@ int main(int argc, char *argv[])
 #ifdef SIGQUIT
     sigs_saved.emplace_back(SIGQUIT, std::signal(SIGQUIT, sigHandler));
 #endif
+    // Start the upnp thread
+    std::atomic_int exitCode = EXIT_SUCCESS; // can be accessed from cliupnp thread
+
     Defer d2([&upnp, &sigs_saved]{
         no_more_signals = true;
         upnp.stop();
@@ -98,11 +102,17 @@ int main(int argc, char *argv[])
             std::signal(sig, orig_val);
     });
 
-    // Start the upnp thread
-    upnp.start(std::move(ports));
+    upnp.start(std::move(ports), /* errorCallback = */[&exitCode]{
+        // this runs in cliupnp thread in case of error
+        if (bool val = false; no_more_signals.compare_exchange_strong(val, true)) {
+            exitCode = EXIT_FAILURE;
+            Debug() << "Error encoutered, signaling main thread to exit program";
+            psem->release(); // tell main thread to wake up
+        }
+    });
 
-    // Wait for signal handler, returning will call the cleanup Defer functions above in reverse order
+    // Wait for signal handler or error, returning will call the cleanup Defer functions above in reverse order
     waitSem();
 
-    return 0;
+    return exitCode.load();
 }

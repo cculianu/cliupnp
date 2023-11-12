@@ -13,9 +13,10 @@ UpnpMgr::UpnpMgr(std::string_view name_) : name(name_) {}
 
 UpnpMgr::~UpnpMgr() { stop(); }
 
-void UpnpMgr::start(PortVec pv)
+void UpnpMgr::start(PortVec pv, std::function<void()> errorCallback_)
 {
     stop();
+    errorCallback = std::move(errorCallback_);
 
     // ensure pv is sorted and contains unique elements before assigning to `ports`
     std::sort(pv.begin(), pv.end());
@@ -40,11 +41,20 @@ void UpnpMgr::stop()
         thread.join();
     }
     interrupt.reset();
+    if (errorCallback) errorCallback = {}; // clear
 }
 
 void UpnpMgr::run()
 {
-    Defer d([this]{ interrupt(); });
+    bool errorFlag = true;
+    Defer d([this, &errorFlag]{
+        interrupt();
+        if (errorCallback) {
+            if (errorFlag) errorCallback(); // signal error to obvserver (if any)
+            errorCallback = {}; // clear std::function to release resources (if any)
+        }
+    });
+
     if (ports.empty()) {
         Error() << "Pass a vector of ports!";
         return;
@@ -114,6 +124,8 @@ void UpnpMgr::run()
                                                                       : strprintf("returned %d", res));
         }
     });
+
+    errorFlag = false; // ok, we are not in an early error return anymore
 
     do {
         if (interrupt) break;

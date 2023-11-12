@@ -3,6 +3,7 @@
 #include "threadinterrupt.h"
 
 #include <cstdint>
+#include <functional>
 #include <thread>
 #include <string>
 #include <string_view>
@@ -16,7 +17,7 @@ public:
 
     using PortVec = std::vector<uint16_t>;
 
-    void start(PortVec ports);
+    void start(PortVec ports, std::function<void()> errorCallback = {});
     void stop();
 
 private:
@@ -24,6 +25,7 @@ private:
     ThreadInterrupt interrupt;
     PortVec ports;
     std::thread thread;
+    std::function<void()> errorCallback;
 
     void run();
 };
