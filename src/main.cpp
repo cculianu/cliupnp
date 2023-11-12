@@ -92,27 +92,31 @@ int main(int argc, char *argv[])
 #ifdef SIGQUIT
     sigs_saved.emplace_back(SIGQUIT, std::signal(SIGQUIT, sigHandler));
 #endif
-    // Start the upnp thread
     std::atomic_int exitCode = EXIT_SUCCESS; // can be accessed from cliupnp thread
 
-    Defer d2([&upnp, &sigs_saved]{
-        no_more_signals = true;
-        upnp.stop();
-        for (const auto & [sig, orig_val]: sigs_saved)
-            std::signal(sig, orig_val);
-    });
+    // Start the upnp thread.
+    // We use a nested scope to ensure upnp.stop() runs before return. This guarantees the return code will be correct
+    // even in the corner case the user hits CTRL-C but also upnp had an error.
+    {
+        Defer d2([&upnp, &sigs_saved]{
+            no_more_signals = true;
+            upnp.stop();
+            for (const auto & [sig, orig_val]: sigs_saved)
+                std::signal(sig, orig_val);
+        });
 
-    upnp.start(std::move(ports), /* errorCallback = */[&exitCode]{
-        // this runs in cliupnp thread in case of error
-        if (bool val = false; no_more_signals.compare_exchange_strong(val, true)) {
+        upnp.start(std::move(ports), /* errorCallback = */[&exitCode]{
+            // this runs in cliupnp thread in case of error
             exitCode = EXIT_FAILURE;
-            Debug() << "Error encoutered, signaling main thread to exit program";
-            psem->release(); // tell main thread to wake up
-        }
-    });
+            if (bool val = false; no_more_signals.compare_exchange_strong(val, true)) {
+                Debug() << "Error encoutered, signaling main thread to exit program";
+                psem->release(); // tell main thread to wake up
+            }
+        });
 
-    // Wait for signal handler or error, returning will call the cleanup Defer functions above in reverse order
-    waitSem();
+        // Wait for signal handler or error, returning will call the cleanup Defer functions above in reverse order
+        waitSem();
+    }
 
     return exitCode.load();
 }
