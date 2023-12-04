@@ -69,7 +69,7 @@ void UpnpMgr::run()
         UPNPUrls urls = {};
         IGDdatas data = {};
         char externalIPAddress[80] = {0};
-        char lanaddr[64];
+        char lanaddr[64] = {};
 
         void cleanup() noexcept {
             FreeUPNPUrls(&urls);
