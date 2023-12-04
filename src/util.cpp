@@ -3,7 +3,6 @@
 #include "tinyformat.h"
 
 #include <cerrno>
-#include <cstdarg>
 #include <cstring>
 #include <mutex>
 #include <thread>
@@ -99,12 +98,22 @@ Log::~Log()
 
 /* static */
 bool Log::isaTTY(const bool stdOut) {
+    auto inner = [](bool stdOut) -> bool {
 #if WINDOWS
-    return false; // console control chars don't reliably work on windows. disable color always
+        if (const int fd = _fileno(stdOut ? stdout : stderr); fd >= 0 && _isatty(fd)) {
+            HANDLE h = GetStdHandle(stdOut ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE); // handle h should not be CloseHandle'd
+            // set console mode to enable VT codes
+            if (DWORD mode{}; h != INVALID_HANDLE_VALUE && GetConsoleMode(h, &mode) && SetConsoleMode(h, mode | 0x0004 /* ENABLE_VIRTUAL_TERMINAL_PROCESSING */))
+                return true;
+        }
+        return false;
 #else
-    const int fd = fileno(stdOut ? stdout : stderr);
-    return isatty(fd);
+        const int fd = fileno(stdOut ? stdout : stderr);
+        return isatty(fd);
 #endif
+    };
+    static const bool cached[2] = {inner(false), inner(true)};
+    return cached[stdOut];
 }
 
 /* static */
