@@ -101,6 +101,7 @@ void UpnpMgr::run()
                 Error("No valid UPnP IGDs found (r=%d)", r);
                 return false;
             }
+            Log("UPnP: Local IP = %s", lanaddr);
 
             /* Probe external IP */
             r = UPNP_GetExternalIPAddress(urls.controlURL, data.first.servicetype, externalIPAddress);
@@ -108,7 +109,7 @@ void UpnpMgr::run()
                 Log("UPnP: GetExternalIPAddress() returned %d", r);
             } else {
                 if (externalIPAddress[0]) {
-                    Log("UPnP: ExternalIPAddress = %s", externalIPAddress);
+                    Log("UPnP: External IP = %s", externalIPAddress);
                 } else {
                     Log("UPnP: GetExternalIPAddress failed.");
                 }
