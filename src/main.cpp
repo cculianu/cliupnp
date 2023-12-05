@@ -73,11 +73,13 @@ int main(int argc, char *argv[])
     }
 
     psem = std::make_unique<AsyncSignalSafe::Sem>();
-    Log::fatalCallback = signalSem;
-    Defer d([]{
-        Log::fatalCallback = {};
+    Defer d([origLogTs = Log::logTimeStamps.load(), origFatalCallback = Log::fatalCallback]{
+        Log::logTimeStamps = origLogTs;
+        Log::fatalCallback = origFatalCallback;
         psem.reset();
     });
+    Log::logTimeStamps = true;
+    Log::fatalCallback = signalSem;
 
     // Parse ports
     UpnpMgr upnp(name);

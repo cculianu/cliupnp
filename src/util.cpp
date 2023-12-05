@@ -3,7 +3,9 @@
 #include "tinyformat.h"
 
 #include <cerrno>
+#include <chrono>
 #include <cstring>
+#include <format>
 #include <mutex>
 #include <thread>
 
@@ -51,14 +53,14 @@ Log::Log(Color c)
     setColor(c);
 }
 
-/* static */ std::atomic<int> Log::logLevel = static_cast<int>(
+/* static */ std::atomic_int Log::logLevel = static_cast<int>(
 #ifdef NDEBUG
     Level::Info
 #else
     Level::Debug
 #endif
 );
-
+/* static */ std::atomic_bool Log::logTimeStamps = false;
 /* static */ std::function<void()> Log::fatalCallback;
 
 static const auto g_main_thread_id = std::this_thread::get_id();
@@ -74,11 +76,22 @@ std::atomic<bool> g_shutdown_requested = false;
 Log::~Log()
 {
     if (doprt) {
+        std::string tsStr;
+        if (logTimeStamps.load(std::memory_order_relaxed)) {
+            try {
+                const std::chrono::zoned_time ltime{std::chrono::current_zone(), std::chrono::system_clock::now()};
+                tsStr = std::format("[{:%x %X %z}] ", ltime);
+            } catch (const std::exception &e) {
+                // Some unspecified tzdb error occurred attempting to localize the time
+                logTimeStamps = false;
+                Error() << e.what();
+            }
+        }
         std::string thrdStr;
         if (!isMainThread()) {
-            thrdStr = "<" + ThreadGetName() + "> ";
+            thrdStr = std::format("<{}> ",  ThreadGetName());
         }
-        const std::string theString = thrdStr + (isaTTY(useStdOut) ? colorize(s.str(), color) : s.str());
+        const std::string theString = tsStr + thrdStr + (isaTTY(useStdOut) ? colorize(s.str(), color) : s.str());
 
         // just print to console for now..
         static std::mutex mut;

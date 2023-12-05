@@ -58,7 +58,8 @@ public:
     /// Log levels
     enum class Level : int { Info = 0, Warning, Critical, Fatal, Debug, Trace };
 
-    static std::atomic<int> logLevel;  ///< app-global log level, defaults to Info on release builds, Debug on debug builds
+    static std::atomic_int logLevel;  ///< app-global log level, defaults to Info on release builds, Debug on debug builds
+    static std::atomic_bool logTimeStamps; ///< app-global; if true, we prepent timestamp info to the log lines
 
     static std::function<void()> fatalCallback; ///< if defined, called every time a Fatal() log line is printed
 
