@@ -96,7 +96,12 @@ void UpnpMgr::run()
                 Debug("Found UPNP Dev %d: %s", i++, d->descURL);
 
             /* Get valid IGD */
+#if MINIUPNPC_API_VERSION <= 17
             r = UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr));
+#else
+            r = UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr), nullptr, 0);
+#endif
+
             if (r != 1) {
                 Error("No valid UPnP IGDs found (r=%d)", r);
                 return false;
@@ -152,17 +157,17 @@ void UpnpMgr::run()
                 const std::string port = strprintf("%u", prt);
                 Debug() << "Mapping " << port << " ...";
                 int r;
-    #ifndef UPNPDISCOVER_SUCCESS
+#ifndef UPNPDISCOVER_SUCCESS
                 /* miniupnpc 1.5 */
                 r = UPNP_AddPortMapping(ctx.urls.controlURL, ctx.data.first.servicetype,
                                         port.c_str(), port.c_str(), ctx.lanaddr,
                                         name.c_str(), "TCP", 0);
-    #else
+#else
                 /* miniupnpc 1.6 */
                 r = UPNP_AddPortMapping(ctx.urls.controlURL, ctx.data.first.servicetype,
                                         port.c_str(), port.c_str(), ctx.lanaddr,
                                         name.c_str(), "TCP", 0, "0");
-    #endif
+#endif
 
                 if (r != UPNPCOMMAND_SUCCESS) {
                     Error("AddPortMapping(%s, %s, %s) failed with code %d (%s)", port, port, ctx.lanaddr, r, strupnperror(r));
