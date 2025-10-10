@@ -95,11 +95,12 @@ void UpnpMgr::run()
             for (UPNPDev *d = devlist; d; d = d->pNext)
                 Debug("Found UPNP Dev %d: %s", i++, d->descURL);
 
+            char wanaddr [[maybe_unused]] [64] = {};
+
             /* Get valid IGD */
 #if MINIUPNPC_API_VERSION <= 17
             r = UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr));
 #else
-            char wanaddr[64] = {};
             r = UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr), wanaddr, sizeof(wanaddr));
 #endif
 
