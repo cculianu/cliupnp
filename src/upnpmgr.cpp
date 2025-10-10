@@ -99,11 +99,31 @@ void UpnpMgr::run()
 #if MINIUPNPC_API_VERSION <= 17
             r = UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr));
 #else
-            r = UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr), nullptr, 0);
+            char wanaddr[64] = {};
+            r = UPNP_GetValidIGD(devlist, &urls, &data, lanaddr, sizeof(lanaddr), wanaddr, sizeof(wanaddr));
 #endif
 
-            if (r != 1) {
-                Error("No valid UPnP IGDs found (r=%d)", r);
+            switch(r) {
+            case 0: break; /* no IGD */
+            case 1: /* UPNP_CONNECTED_IGD */
+                Debug("Found valid IGD: %s", urls.controlURL);
+                break;
+            case 2: /* UPNP_PRIVATEIP_IGD */
+                Debug("Found an IGD with a reserved IP address (%s): %s", wanaddr, urls.controlURL);
+                break;
+            case 3: /* UPNP_DISCONNECTED_IGD */
+                Debug("Found a (not connected?) IGD: %s", urls.controlURL);
+                break;
+            case 4: /* UPNP_UNKNOWN_DEVICE */
+                Debug("UPnP unknown device: %s", urls.controlURL);
+                break;
+            default: /* everything else is some API */
+                Warning() << "UPNP_GetValidIGD unexpected return value: " << r;
+                break;
+            }
+
+            if (r != 1 && r != 2) {
+                Error("No valid UPnP IGDs found (r=%d; %s)", r, strupnperror(r));
                 return false;
             }
             Log("UPnP: Local IP = %s", lanaddr);
